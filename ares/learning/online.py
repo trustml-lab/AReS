@@ -11,7 +11,13 @@ class OnlineSystemLearning(nn.Module):
         self.model = model
         self.opt = optim.SGD(self.model.parameters(), lr=self.args.lr)
         #TODO: mse by default
-        self.loss_fn = lambda x1, x2: (x1 - x2).pow(2).mean()
+        #self.loss_fn = lambda x1, x2: (x1 - x2).pow(2).mean()
+        self.loss_fn = lambda x1, x2: (x1 - x2).abs().mean(dim=-1)
+        
+        self.n_batch = 100
+        self.x_batch = []
+        self.u_batch = []
+        self.y_batch = []
 
             
     def update(self, x, u, x_next):
@@ -22,15 +28,40 @@ class OnlineSystemLearning(nn.Module):
         if type(x_next) is not tc.Tensor:
             x_next = tc.tensor(x_next, dtype=tc.float32)
 
-        self.opt.zero_grad()
 
-        print(self.model(x, u) - x_next)
-        loss = self.loss_fn(self.model(x, u), x_next)
-        
-        
-        
-        loss.backward()
-        self.opt.step()
+        self.x_batch.append(x.t())
+        self.u_batch.append(u.t())
+        self.y_batch.append(x_next.t())
+        self.x_batch = self.x_batch[-self.n_batch:]
+        self.u_batch = self.u_batch[-self.n_batch:]
+        self.y_batch = self.y_batch[-self.n_batch:]
+            
+        # self.opt.zero_grad()
 
+        # x = tc.cat(self.x_batch)
+        # u = tc.cat(self.u_batch)
+        # y = tc.cat(self.y_batch)
+        
+        # print((self.model(x, u) - y).mean(dim=0))
+        # loss = self.loss_fn(self.model(x, u), y).mean()
+        
+        # loss.backward()
+        # self.opt.step()
+
+        x = tc.cat(self.x_batch).numpy()
+        u = tc.cat(self.u_batch).numpy()
+        y = tc.cat(self.y_batch).numpy()
+
+        AB = np.matmul(y.transpose(), np.linalg.pinv(np.hstack((x, u)).transpose()))
+        A = AB[:, :3]
+        B = AB[:, 3:]
+
+        self.model.A.data = tc.tensor(A)
+        self.model.B.data = tc.tensor(B)
+        
+        
+        print('A =', self.model.A)
+        loss = self.loss_fn(self.model(tc.tensor(x), tc.tensor(u)), tc.tensor(y)).mean()
+        
         print(f'loss = {loss.item()}')
 

@@ -12,16 +12,20 @@ import ares
 
 
 # drone simulator
-class Drone1D:
+class DroneSim:
     def __init__(self, args):
-        self.state = np.zeros((3, 1))
-        self.u = np.array([[1e-5], [0], [0]])
+        # self.state = np.zeros((3, 1))
+        # self.u = np.array([[1e-5], [0], [0]])
+        
+        self.state = np.array([[0], [1], [1]])
+        self.u = np.array([[0], [0], [0]])
 
         self.name = args.name
-        self.dyn_mdl = np.array([[1, 0, 0], [1, 1, 0], [0, 1, 1]])
-        self.obs_noise_sig = np.array([0.001, 0.005, 0.01])
+        self.dyn_mdl = np.array([[0, 0, 0], [1, 1, 0], [0, 1, 1]])
+        self.obs_noise_sig = np.array([0.001, 0.001, 0.001])
         #TODO: add a PID controller
 
+        
     def update(self):
         #TODO: update self.u
         self.state = np.matmul(self.dyn_mdl, self.state) + self.u
@@ -67,9 +71,9 @@ class AReS:
 
 
 def loop(args):
-    drone = Drone1D(args.data)
+    drone = DroneSim(args.data)
     ares = AReS(args)
-    for t in range(1, 101):
+    for t in range(1, 1001):
         drone.update()
         obs = drone.observe()
         ares.update(obs)
@@ -115,9 +119,9 @@ def parse_args():
     
     ## model args
     #parser.add_argument('--model_base.name', type=str, nargs='+', default=['KF1D'])    
-    parser.add_argument('--model_base.lr', type=float, default=1e-1)
+    parser.add_argument('--model_base.lr', type=float, default=1e-4)
     parser.add_argument('--model_base.state_dim', type=int, default=3)
-    parser.add_argument('--model_base.action_dim', type=int, default=3)
+    parser.add_argument('--model_base.action_dim', type=int, default=4)
 
 
     # ## model args
