@@ -13,6 +13,28 @@ POSCTL_TAKEOFF_THROTTLE_AMOUNT = 1000
 POSCTL_FLOAT_THROTTLE_AMOUNT = 500
 
 
+def request_message_interval(message_id: int, frequency_hz: float):
+    """
+    Request MAVLink message in a desired frequency,
+    documentation for SET_MESSAGE_INTERVAL:
+        https://mavlink.io/en/messages/common.html#MAV_CMD_SET_MESSAGE_INTERVAL
+
+    Args:
+        message_id (int): MAVLink message ID
+        frequency_hz (float): Desired frequency in Hz
+
+    Code borrowed from: https://www.ardusub.com/developers/pymavlink.html
+    """
+    master.mav.command_long_send(
+        master.target_system, master.target_component,
+        mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, 0,
+        message_id, # The MAVLink message ID
+        1e6 / frequency_hz, # The interval between two messages in microseconds. Set to -1 to disable and 0 to request default rate.
+        0, 0, 0, 0, # Unused parameters
+        0
+    )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='data collection')
     parser.add_argument('--output_root', type=str, default='output_data_collection')
@@ -21,18 +43,40 @@ if __name__ == "__main__":
 
     exp_output_root = os.path.join(args.output_root, args.exp_name)
     os.makedirs(exp_output_root, exist_ok=True)
-    
-    master = mavutil.mavlink_connection("udpin:127.0.0.1:14550")
+
+    ### use below for simulation ###
+    # master = mavutil.mavlink_connection("udpin:127.0.0.1:14550")
+    ### ###
+
+    ### use below for actual drone ###
+    serial_list = mavutil.auto_detect_serial(preferred_list=['*FTDI*', "*Arduino_Mega_2560*", "*3D_Robotics*", "*USB_to_UART*", '*PX4*', '*FMU*', "*Gumstix*"])
+    ### ###
+
+    if len(serial_list) == 0:
+        print("Error: no serial connection found")
+        exit(1)
+
+    if len(serial_list) > 1:
+        print('Auto-detected serial ports are:')
+        for port in serial_list:
+            print(" {:}".format(port))
+    print('Using port {:}'.format(serial_list[0]))
+    port = serial_list[0].device
+
+    master = mavutil.mavlink_connection(port, baud=57600, source_system=255)
 
     # make sure the connection is valid
     master.wait_heartbeat()
     print("Heartbeat from system (system %u component %u)" %
             (master.target_system, master.target_component))
 
+    # set msg interval to 20 hz
+    request_message_interval(36, 20) # SERVO_OUTPUT_RAW
+    request_message_interval(141, 20) # ATTITUDE
 
     n_data = 0
     #TODO: trigger the start and end via messages.
-    n_data_max = 1000
+    n_data_max = 200
     ang_vel = {}
     servo = {}
     
