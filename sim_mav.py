@@ -6,6 +6,7 @@ import warnings
 import pickle
 import time
 import threading
+import torch as tc
 
 import utils
 import acon2
@@ -44,13 +45,20 @@ POSCTL_FLOAT_THROTTLE_AMOUNT = 500
 # adaptive reachable sets
 class AReS:
     def __init__(self, args):
-
+        self.args = args
         self.model = ares.models.LinearDynamicalSystem(args.model_base)
         self.learner = ares.learning.OnlineSystemLearning(args.model_base, self.model)
         
         self.obs = None
+        self.data_log = []
 
         
+    def __del__(self):
+        data_fn = os.path.join(self.args.output_root, self.args.exp_name, 'data.pk')
+        os.makedirs(os.path.dirname(data_fn), exist_ok=True)
+        pickle.dump(self.data_log, open(data_fn, 'wb'))
+
+                                        
     def update(self, obs):
 
         if self.obs is not None:
@@ -59,7 +67,23 @@ class AReS:
             x_next = obs['o']['GPS']
             self.learner.update(x, u, x_next)
             
+            print(f'[{self.args.exp_name}]', self.learner.data)
+            self.data_log.append(self.learner.data)
+            
+            
         self.obs = obs
+
+        
+class ControlInv(AReS):
+    def __init__(self, args):
+        super().__init__(args)
+        
+        self.model = ares.models.LinearDynamicalSystem(args.model_base)
+        warnings.warn('TODO')
+        self.model.load_state_dict(tc.load(os.path.join(args.output_root, args.exp_name, 'model')))
+
+        self.learner = ares.learning.BatchSystemLearning(args.model_base, self.model)
+        
         
 
 def loop(args):
@@ -73,8 +97,14 @@ def loop(args):
             (master.target_system, master.target_component))
 
     #drone = Drone1D(args.data)
+    
     ares = AReS(args)
 
+    #TODO
+    args_baseline = copy.deepcopy(args)
+    args_baseline.exp_name = 'baseline'
+    ci = ControlInv(args_baseline)
+    
     # loops
     x_cur = None
     u_cur = None
@@ -97,6 +127,7 @@ def loop(args):
                 sensors = {'GPS': x_cur}
                 obs = {'o': sensors, 'u': u_cur}
                 ares.update(obs)
+                ci.update(obs)
 
                 # init
                 x_cur = None

@@ -14,7 +14,7 @@ class LinearDynamicalSystem(nn.Module):
 
 
     def forward(self, x, u):
-        print(x.shape, u.shape)
+        #print(x.shape, u.shape)
         x_next = tc.matmul(x, self.A.t()) + tc.matmul(u, self.B.t())
-        print(x_next.shape)
+        #print(x_next.shape)
         return x_next

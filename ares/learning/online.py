@@ -1,8 +1,10 @@
 import os, sys
 import numpy as np
+import warnings
 
 import torch as tc
 from torch import nn, optim
+
 
 class OnlineSystemLearning(nn.Module):
     def __init__(self, args, model):
@@ -13,12 +15,13 @@ class OnlineSystemLearning(nn.Module):
         #TODO: mse by default
         #self.loss_fn = lambda x1, x2: (x1 - x2).pow(2).mean()
         self.loss_fn = lambda x1, x2: (x1 - x2).abs().mean(dim=-1)
-        
+
         self.n_batch = 100
         self.x_batch = []
         self.u_batch = []
         self.y_batch = []
-
+        self.data = {}
+        
             
     def update(self, x, u, x_next):
         if type(x) is not tc.Tensor:
@@ -60,8 +63,12 @@ class OnlineSystemLearning(nn.Module):
         self.model.B.data = tc.tensor(B)
         
         
-        print('A =', self.model.A)
-        loss = self.loss_fn(self.model(tc.tensor(x), tc.tensor(u)), tc.tensor(y)).mean()
+        #print('A =', self.model.A)
         
-        print(f'loss = {loss.item()}')
+        y_pred = self.model(tc.tensor(x), tc.tensor(u))
+        loss = self.loss_fn(y_pred, tc.tensor(y))[-1]
+
+        self.data = {'x': x[-1], 'u': u[-1], 'y': y[-1], 'y_pred': y_pred[-1].detach().numpy(), 'loss': loss.item()}
+
+        #print(f'loss = {loss.item()}')
 
