@@ -1,2 +1,1 @@
-# AReS
-Adaptive Reachable Sets
+# AReS: Adaptive Reachable Set Learning
