@@ -56,7 +56,8 @@ def arm(master):
         mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
         0,
         1, # 1: arm, 0: disarm
-        0, 0, 0, 0, 0, 0
+        21196,
+        0, 0, 0, 0, 0
     )
     master.motors_armed_wait()
     print("armed!")
@@ -146,9 +147,10 @@ def set_mode(master, mode_str, wait_time):
     time.sleep(wait_time)
 
 
-if __name__ == "__main__":
-    set_mode(master, "POSCTL", wait_time=1)
-    print("takeoff")
+def prep_mission(master):
+    print("[+] Getting prepared for a mission")
+
+    print("  [*] Take off")
     for i in range(500):
         master.mav.manual_control_send(
             master.target_system,
@@ -159,7 +161,7 @@ if __name__ == "__main__":
             0)
         time.sleep(0.01)
 
-    print("float")
+    print("  [*] Float")
     for i in range(500):
         master.mav.manual_control_send(
             master.target_system,
@@ -169,6 +171,46 @@ if __name__ == "__main__":
             0, # r
             0)
         time.sleep(0.01)
+
+def do_mission(master, mission):
+    print("Starting a mission")
+    cnt = 0
+    for (x, y, z, sec) in mission:
+        print(f"Target #{cnt}: ({x}, {y}, {z}) for {sec} sec")
+
+        for i in range(sec * 100):
+            master.mav.manual_control_send(
+                master.target_system,
+                x, # x
+                y, # y
+                z, # z
+                0, # r
+                0)
+            time.sleep(0.01) # 100 hz
+
+        cnt += 1
+
+    print("Mission complete")
+
+
+def end_mission(master):
+    print("[+] Ending a mission")
+    print("  [*] Landing")
+
+    for i in range(500):
+        master.mav.manual_control_send(
+            master.target_system,
+            0, # x
+            0, # y
+            0, # z
+            0, # r
+            0)
+        time.sleep(0.01)
+
+
+if __name__ == "__main__":
+    set_mode(master, "POSCTL", wait_time=1)
+    print("takeoff")
 
     print("go to target")
     for i in range(500):
