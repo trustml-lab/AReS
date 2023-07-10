@@ -43,8 +43,6 @@ def collect_data(master, ang_vel, servo, is_done, n_data_max=200):
 
     n_data = 0
     #TODO: trigger the start and end via messages.
-    ang_vel = {}
-    servo = {}
 
     while n_data <= n_data_max and not is_done.wait(0):
         msg = master.recv_match()
@@ -74,7 +72,6 @@ def collect_data(master, ang_vel, servo, is_done, n_data_max=200):
             # print(f'[servo data, {ms} ms] servo_1 = {s1}, servo_2 = {s2}, servo_3 = {s3}, servo_4 = {s4}')
 
     print("done collecting data")
-    return ang_vel, servo
 
 
 if __name__ == "__main__":
