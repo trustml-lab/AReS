@@ -12,7 +12,7 @@ os.environ["MAVLINK20"] = "1"
 
 from pymavlink import mavutil
 
-POSCTL_TAKEOFF_THROTTLE_AMOUNT = 1000
+POSCTL_TAKEOFF_THROTTLE_AMOUNT = 700
 POSCTL_FLOAT_THROTTLE_AMOUNT = 500
 
 
@@ -61,7 +61,7 @@ def collect_data(master, ang_vel, servo, is_done, n_data_max=200):
             ang_vel[ms//100] = {"rollspeed": rv, "pitchspeed": pv, "yawspeed": yv} # collect data in 10 Hz
             n_data += 1
 
-            print(f'[angular velocity, {ms} ms] rollspeed = {rv:.4f}, pitchspeed = {pv:.4f}, yawspeed = {yv:.4f}')
+            # print(f'[angular velocity, {ms} ms] rollspeed = {rv:.4f}, pitchspeed = {pv:.4f}, yawspeed = {yv:.4f}')
 
         elif msg.get_type() == 'SERVO_OUTPUT_RAW':
             msg = msg.to_dict()
@@ -71,7 +71,7 @@ def collect_data(master, ang_vel, servo, is_done, n_data_max=200):
             s3 = msg["servo3_raw"]
             s4 = msg["servo4_raw"]
             servo[ms//100] = {"servo1": s1, "servo2": s2, "servo3": s3, "servo4": s4}
-            print(f'[servo data, {ms} ms] servo_1 = {s1}, servo_2 = {s2}, servo_3 = {s3}, servo_4 = {s4}')
+            # print(f'[servo data, {ms} ms] servo_1 = {s1}, servo_2 = {s2}, servo_3 = {s3}, servo_4 = {s4}')
 
     print("done collecting data")
     return ang_vel, servo
@@ -81,26 +81,37 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='data collection')
     parser.add_argument('--output_root', type=str, default='output_data_collection')
     parser.add_argument('--exp_name', type=str, default='1')
+    parser.add_argument('--sim', type=bool, default=False)
     args = parser.parse_args()
 
     exp_output_root = os.path.join(args.output_root, args.exp_name)
     os.makedirs(exp_output_root, exist_ok=True)
 
-    master = mr.connect_mavlink(sim=False)
+    master = mr.connect_mavlink(sim=args.sim)
+    mr.connect_virt_rc(master)
+
+    time.sleep(1)
+    mr.lower_virt_rc(master)
+    time.sleep(1)
 
     # set msg interval to 20 hz
     request_message_interval(master, 36, 10) # SERVO_OUTPUT_RAW
     request_message_interval(master, 141, 10) # ATTITUDE
 
+    time.sleep(1)
+    mr.set_mode(master, "POSCTL", wait_time=1)
+
+    time.sleep(1)
+
     mr.arm(master)
+    time.sleep(1)
 
     mr.prep_mission(master)
-    # mr.set_mode(master, "POSCTL", wait_time=1)
 
     rc_mission = [
-        (500, 500, POSCTL_FLOAT_THROTTLE_AMOUNT, 5),
+        (500, 500, POSCTL_FLOAT_THROTTLE_AMOUNT, 3),
         (0, 0, POSCTL_FLOAT_THROTTLE_AMOUNT, 5),
-        (-500, -500, POSCTL_FLOAT_THROTTLE_AMOUNT, 5),
+        (-500, -500, POSCTL_FLOAT_THROTTLE_AMOUNT, 3),
         (0, 0, POSCTL_FLOAT_THROTTLE_AMOUNT, 5),
     ]
     is_done = threading.Event()
@@ -111,7 +122,7 @@ if __name__ == "__main__":
     )
     # mr.do_mission(master, rc_mission)
 
-    n_data_max = 200
+    n_data_max = 2000
     ang_vel = dict()
     servo = dict()
     t_data = threading.Thread(
@@ -130,6 +141,7 @@ if __name__ == "__main__":
     print("Threads done")
     mr.end_mission(master)
     mr.disarm(master, force=True)
+    mr.lower_virt_rc(master)
 
     ##TODO: how to synchronize data?
 
