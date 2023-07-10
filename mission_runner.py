@@ -10,8 +10,78 @@ from pymavlink import mavutil
 POSCTL_TAKEOFF_THROTTLE_AMOUNT = 1000
 POSCTL_FLOAT_THROTTLE_AMOUNT = 500
 
+def connect_mavlink(sim=False):
+    if sim:
+        master = mavutil.mavlink_connection("udpin:127.0.0.1:14550")
+    else:
+        known_devices=[
+            '*FTDI*',
+            "*Arduino_Mega_2560*",
+            "*3D_Robotics*",
+            "*USB_to_UART*",
+            '*PX4*',
+            '*FMU*',
+            "*Gumstix*"
+        ]
+        serial_list = mavutil.auto_detect_serial(preferred_list=known_devices)
 
-def get_mode():
+        if len(serial_list) == 0:
+            print("Error: no serial connection found")
+            exit(1)
+
+        if len(serial_list) > 1:
+            print('Auto-detected serial ports are:')
+            for port in serial_list:
+                print(" {:}".format(port))
+        print('Using port {:}'.format(serial_list[0]))
+        port = serial_list[0].device
+
+        master = mavutil.mavlink_connection(port, baud=57600, source_system=255)
+
+    # make sure the connection is valid
+    master.wait_heartbeat()
+    print("Heartbeat from system (system %u component %u)" %
+            (master.target_system, master.target_component))
+
+    return master
+
+
+def arm(master):
+    # set / connect (virtual) RC before arming to prevent px4 from
+    # engaging the failsafe mode right away
+    print("[send] Arm")
+    master.mav.command_long_send(
+        master.target_system,
+        master.target_component,
+        mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+        0,
+        1, # 1: arm, 0: disarm
+        0, 0, 0, 0, 0, 0
+    )
+    master.motors_armed_wait()
+    print("armed!")
+    time.sleep(2)
+
+
+def disarm(master, force=False):
+    print("[send] Disarm")
+    if force:
+        param_force = 21196
+    else:
+        param_force = 0
+
+    master.mav.command_long_send(
+        master.target_system,
+        master.target_component,
+        mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+        0,
+        0, # 1: arm, 0: disarm
+        param_force,
+        0, 0, 0, 0, 0
+    )
+
+
+def get_mode(master):
     while True:
         msg = master.recv_match(type = 'HEARTBEAT', blocking = False)
         if msg:
@@ -20,7 +90,7 @@ def get_mode():
             break
 
 
-def set_mode(mode_str, wait_time):
+def set_mode(master, mode_str, wait_time):
     """
     mode_str can be one of:
     {
@@ -74,46 +144,7 @@ def set_mode(mode_str, wait_time):
 
 
 if __name__ == "__main__":
-    # master = mavutil.mavlink_connection("udpin:127.0.0.1:14550")
-
-    serial_list = mavutil.auto_detect_serial(preferred_list=['*FTDI*', "*Arduino_Mega_2560*", "*3D_Robotics*", "*USB_to_UART*", '*PX4*', '*FMU*', "*Gumstix*"])
-
-    if len(serial_list) == 0:
-        print("Error: no serial connection found")
-        exit(1)
-
-    if len(serial_list) > 1:
-        print('Auto-detected serial ports are:')
-        for port in serial_list:
-            print(" {:}".format(port))
-    print('Using port {:}'.format(serial_list[0]))
-    port = serial_list[0].device
-
-    master = mavutil.mavlink_connection(port, baud=57600, source_system=255)
-
-    # make sure the connection is valid
-    master.wait_heartbeat()
-    print("Heartbeat from system (system %u component %u)" %
-            (master.target_system, master.target_component))
-
-    # print(master.__dict__)
-
-    # set / connect (virtual) RC before arming to prevent px4 from
-    # engaging the failsafe mode right away
-    master.mav.command_long_send(
-        master.target_system,
-        master.target_component,
-        mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
-        0,
-        1, 0, 0, 0, 0, 0, 0
-    )
-
-    print("waiting for the vehicle to arm")
-    master.motors_armed_wait()
-    print("armed!")
-    time.sleep(2)
-
-    set_mode("POSCTL", wait_time=1)
+    set_mode(master, "POSCTL", wait_time=1)
     print("takeoff")
     for i in range(500):
         master.mav.manual_control_send(
@@ -190,13 +221,4 @@ if __name__ == "__main__":
             0, # r
             0)
         time.sleep(0.01)
-
-    print("disarm")
-    master.mav.command_long_send(
-        master.target_system,
-        master.target_component,
-        mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
-        0,
-        0, 0, 0, 0, 0, 0, 0
-    )
 
