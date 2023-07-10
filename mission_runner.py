@@ -46,6 +46,69 @@ def connect_mavlink(sim=False):
     return master
 
 
+def connect_virt_rc(master):
+    set_param(
+        master,
+        "COM_RC_LOSS_T",
+        30,
+        mavutil.mavlink.MAV_PARAM_TYPE_REAL32
+    )
+
+    master.mav.manual_control_send(
+        master.target_system,
+        0,
+        0,
+        750,
+        0,
+        0
+    )
+
+
+def lower_virt_rc(master):
+    master.mav.manual_control_send(
+        master.target_system,
+        0,
+        0,
+        0,
+        0,
+        0
+    )
+
+
+def set_param(master, param_name, param_value, param_type, debug=False):
+    print(f"[*] (MAVLink) set param {param_name} := {param_value}")
+    current_param_name = param_name
+    current_param_type = param_type
+
+    master.mav.param_set_send(
+        master.target_system,
+        master.target_component,
+        param_name.encode(), # requires 'b'
+        param_value,
+        param_type,
+    )
+
+    # Verify parameter change
+    master.mav.param_request_list_send(
+        master.target_system,
+        master.target_component
+    )
+
+    while True:
+        time.sleep(0.01)
+        try:
+            message = master.recv_match(type='PARAM_VALUE', blocking=True).to_dict()
+
+            if message["param_id"] == param_name:
+                print('name: %s\tvalue: %d' % (message['param_id'],
+                                               message['param_value']))
+                break
+
+        except Exception as error:
+            print(error)
+            sys.exit(0)
+
+
 def arm(master):
     # set / connect (virtual) RC before arming to prevent px4 from
     # engaging the failsafe mode right away
@@ -151,7 +214,7 @@ def prep_mission(master):
     print("[+] Getting prepared for a mission")
 
     print("  [*] Take off")
-    for i in range(500):
+    for i in range(50):
         master.mav.manual_control_send(
             master.target_system,
             0, # x
@@ -159,10 +222,10 @@ def prep_mission(master):
             POSCTL_TAKEOFF_THROTTLE_AMOUNT, # z
             0, # r
             0)
-        time.sleep(0.01)
+        time.sleep(0.1)
 
     print("  [*] Float")
-    for i in range(500):
+    for i in range(50):
         master.mav.manual_control_send(
             master.target_system,
             0, # x
@@ -170,7 +233,7 @@ def prep_mission(master):
             POSCTL_FLOAT_THROTTLE_AMOUNT, # z
             0, # r
             0)
-        time.sleep(0.01)
+        time.sleep(0.1)
 
 def do_mission(master, is_done, mission):
     print("Starting a mission")
@@ -178,7 +241,7 @@ def do_mission(master, is_done, mission):
     for (x, y, z, sec) in mission:
         print(f"Target #{cnt}: ({x}, {y}, {z}) for {sec} sec")
 
-        for i in range(sec * 100):
+        for i in range(sec * 10):
             master.mav.manual_control_send(
                 master.target_system,
                 x, # x
@@ -186,19 +249,19 @@ def do_mission(master, is_done, mission):
                 z, # z
                 0, # r
                 0)
-            time.sleep(0.01) # 100 hz
+            time.sleep(0.1) # 100 hz
 
         cnt += 1
 
-    print("Mission complete")
     is_done.set()
+    print("Mission complete")
 
 
 def end_mission(master):
     print("[+] Ending a mission")
     print("  [*] Landing")
 
-    for i in range(500):
+    for i in range(200):
         master.mav.manual_control_send(
             master.target_system,
             0, # x
@@ -206,7 +269,7 @@ def end_mission(master):
             0, # z
             0, # r
             0)
-        time.sleep(0.01)
+        time.sleep(0.1)
 
 
 if __name__ == "__main__":
