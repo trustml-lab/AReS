@@ -79,6 +79,9 @@ def disarm(master, force=False):
         param_force,
         0, 0, 0, 0, 0
     )
+    master.motors_disarmed_wait()
+    print("disarmed!")
+    time.sleep(2)
 
 
 def get_mode(master):
