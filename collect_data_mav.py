@@ -38,7 +38,7 @@ def request_message_interval(master, message_id: int, frequency_hz: float):
     )
 
 
-def collect_data(master, ang_vel, servo, n_data_max=200):
+def collect_data(master, ang_vel, servo, is_done, n_data_max=200):
     print("collecting data")
 
     n_data = 0
@@ -46,7 +46,7 @@ def collect_data(master, ang_vel, servo, n_data_max=200):
     ang_vel = {}
     servo = {}
 
-    while n_data <= n_data_max:
+    while n_data <= n_data_max and not is_done.wait(0):
         msg = master.recv_match()
         if not msg:
             continue
@@ -89,8 +89,8 @@ if __name__ == "__main__":
     master = mr.connect_mavlink(sim=False)
 
     # set msg interval to 20 hz
-    request_message_interval(master, 36, 20) # SERVO_OUTPUT_RAW
-    request_message_interval(master, 141, 20) # ATTITUDE
+    request_message_interval(master, 36, 10) # SERVO_OUTPUT_RAW
+    request_message_interval(master, 141, 10) # ATTITUDE
 
     mr.arm(master)
 
@@ -103,13 +103,21 @@ if __name__ == "__main__":
         (-500, -500, POSCTL_FLOAT_THROTTLE_AMOUNT, 5),
         (0, 0, POSCTL_FLOAT_THROTTLE_AMOUNT, 5),
     ]
+    is_done = threading.Event()
 
-    t_mission = threading.Thread(target=mr.do_mission, args=(master,rc_mission,))
+    t_mission = threading.Thread(
+        target=mr.do_mission,
+        args=(master,is_done,rc_mission,)
+    )
     # mr.do_mission(master, rc_mission)
 
+    n_data_max = 200
     ang_vel = dict()
     servo = dict()
-    t_data = threading.Thread(target=collect_data, args=(master,ang_vel,servo,20,))
+    t_data = threading.Thread(
+        target=collect_data,
+        args=(master,ang_vel,servo,is_done,n_data_max,)
+    )
     # collect_data(master, ang_vel, servo, n_data_max=20)
 
     threads = [t_data, t_mission]

@@ -172,7 +172,7 @@ def prep_mission(master):
             0)
         time.sleep(0.01)
 
-def do_mission(master, mission):
+def do_mission(master, is_done, mission):
     print("Starting a mission")
     cnt = 0
     for (x, y, z, sec) in mission:
@@ -191,6 +191,7 @@ def do_mission(master, mission):
         cnt += 1
 
     print("Mission complete")
+    is_done.set()
 
 
 def end_mission(master):
