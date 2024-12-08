@@ -32,7 +32,7 @@ pip install -r requirements.txt
 ### Step 1: Run the Simulation
 Execute the simulation code with the desired experiment name
 ```sh
-python srcs/sim_mav.py --exp_name [exp_name]
+python srcs/sim_from_data.py --exp_name [exp_name]
 ```
 
 ### Step 2: Visualize the Results
