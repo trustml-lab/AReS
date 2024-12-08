@@ -5,80 +5,134 @@ import copy
 import warnings
 import pickle
 import time
+import threading
+import torch as tc
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
+sys.path.append(parent_dir)
 
 import utils
 import acon2
 import ares
 
 
-# drone simulator
-class DroneSim:
+# Drone simulator
+class Drone1D:
     def __init__(self, args):
-        # self.state = np.zeros((3, 1))
-        # self.u = np.array([[1e-5], [0], [0]])
+        self.state = np.zeros((3, 1))  # Initial state: [rollspeed, pitchspeed, yawspeed]
+        self.u = np.array([[1500], [1500], [1500], [1500]])  # Default servo values
         
-        self.state = np.array([[0], [1], [1]])
-        self.u = np.array([[0], [0], [0]])
+        self.name = ['rollspeed', 'pitchspeed', 'yawspeed']
+        self.dyn_mdl = np.array([[1, 0, 0], [1, 1, 0], [0, 1, 1]])  # Simple dynamics matrix
+        self.obs_noise_sig = np.array([0.01, 0.01, 0.01])  # Observation noise
 
-        self.name = args.name
-        self.dyn_mdl = np.array([[0, 0, 0], [1, 1, 0], [0, 1, 1]])
-        self.obs_noise_sig = np.array([0.001, 0.001, 0.001])
-        #TODO: add a PID controller
-
-        
     def update(self):
-        #TODO: update self.u
-        self.state = np.matmul(self.dyn_mdl, self.state) + self.u
-
+        # Update the state based on dynamics and control input
+        self.state = np.matmul(self.dyn_mdl, self.state) + self.u[:3] * 1e-4
 
     def observe(self):
-        sensors = {n: np.random.normal(self.state, sig) for n, sig in zip(self.name, self.obs_noise_sig)}
+        # Add noise to the state to simulate sensor observations
+        sensors = {
+            'rollspeed': np.random.normal(self.state[0, 0], self.obs_noise_sig[0]),
+            'pitchspeed': np.random.normal(self.state[1, 0], self.obs_noise_sig[1]),
+            'yawspeed': np.random.normal(self.state[2, 0], self.obs_noise_sig[2]),
+            'GPS': self.state  # Added 'GPS' key
+        }
         return {'o': sensors, 'u': self.u}
+
+
+# Modified loop function
+def loop(args):
+    # Initialize the Drone1D simulator
+    drone = Drone1D(args)
+    ares = AReS(args)
+
+    # Initialize baseline control invariant
+    args_baseline = copy.deepcopy(args)
+    args_baseline.exp_name = 'baseline'
+    ci = ControlInv(args_baseline)
+
+    # Initialize variables
+    x_cur = None
+    u_cur = np.zeros((4, 1))  # Default servo values to avoid NoneType error
+
+    while True:
+        # Update the drone state
+        drone.update()
+        
+        # Simulate sensor observations
+        observation = drone.observe()
+        sensors = observation['o']
+        u_cur = observation['u'] if observation['u'] is not None else u_cur  # Ensure u_cur is not None
+        
+        # Construct state vector from sensors
+        x = np.array([[sensors['rollspeed']], [sensors['pitchspeed']], [sensors['yawspeed']]])
+        
+        if x_cur is not None and u_cur is not None:
+            # Update AReS and ControlInv with observations
+            obs = {'o': sensors, 'u': u_cur}
+            ares.update(obs)
+            ci.update(obs)
+
+            # Reset x_cur for the next iteration
+            x_cur = None
+            time.sleep(0.05)
+        
+        # Update x_cur for the next iteration
+        x_cur = x
+
+        # Print simulated data for debugging
+        print(f'[angular velocity] rollspeed = {x[0][0]:.4f}, pitchspeed = {x[1][0]:.4f}, yawspeed = {x[2][0]:.4f}')
+        print(f'[servo data] servo_1 = {u_cur[0][0]}, servo_2 = {u_cur[1][0]}, servo_3 = {u_cur[2][0]}, servo_4 = {u_cur[3][0]}')
+
+
             
 
 # adaptive reachable sets
 class AReS:
     def __init__(self, args):
-
-        # # init acon2
-        # model_base = {k: getattr(acon2, v)(model_base_args) for k, v, model_base_args in zip(args.data.name, args.model_base.name, split_args(args.model_base))}
-        # model_ps_src = {k: getattr(acon2, model_name)(model_args, model_base[k]) for k, model_name, model_args in zip(args.data.name, args.model_ps.name, split_args(args.model_ps))}        
-        # self.acon2 = acon2.ACon2(args.model_ps, model_ps_src)
-
+        self.args = args
         self.model = ares.models.LinearDynamicalSystem(args.model_base)
         self.learner = ares.learning.OnlineSystemLearning(args.model_base, self.model)
         
         self.obs = None
+        self.data_log = []
 
         
-    def update(self, obs):
+    def __del__(self):
+        data_fn = os.path.join(self.args.output_root, self.args.exp_name, 'data.pk')
+        os.makedirs(os.path.dirname(data_fn), exist_ok=True)
+        pickle.dump(self.data_log, open(data_fn, 'wb'))
 
+                                        
+    def update(self, obs):
         if self.obs is not None:
-            x = self.obs['o']['GPS'] ##TODO: state estimation
+            try:
+                x = self.obs['o']['GPS']  # Ensure 'GPS' key exists
+            except KeyError:
+                raise KeyError("'GPS' key is missing in the observation data")
+
             u = self.obs['u']
             x_next = obs['o']['GPS']
             self.learner.update(x, u, x_next)
             
+            print(f'[{self.args.exp_name}]', self.learner.data)
+            self.data_log.append(self.learner.data)
         self.obs = obs
+
+
         
-        # if not self.acon2.initialized:
-        #     self.acon2.init_or_update(obs)
-        # else:
-        #     self.acon2.init_or_update(obs)
-        #     print(f"[time = {self.counter}] median(obs) = {np.median([obs[k] for k in obs.keys() if obs[k] is not None]):.4f}, "\
-        #           f"interval = [{self.acon2.ps[0]:.4f}, {self.acon2.ps[1]:.4f}], length = {self.acon2.ps[1] - self.acon2.ps[0]:.4f}, "\
-        #           f"error = {self.acon2.n_err / self.acon2.n_obs:.4f}")
+class ControlInv(AReS):
+    def __init__(self, args):
+        super().__init__(args)
+        
+        self.model = ares.models.LinearDynamicalSystem(args.model_base)
+        warnings.warn('TODO')
+        self.model.load_state_dict(tc.load(os.path.join(args.output_root, args.exp_name, 'model')))
 
+        self.learner = ares.learning.BatchSystemLearning(args.model_base, self.model)
 
-def loop(args):
-    drone = DroneSim(args.data)
-    ares = AReS(args)
-    for t in range(1, 1001):
-        drone.update()
-        obs = drone.observe()
-        ares.update(obs)
-        time.sleep(0.1)
-    
 
 # others            
 def split_args(args):
@@ -119,7 +173,7 @@ def parse_args():
     
     ## model args
     #parser.add_argument('--model_base.name', type=str, nargs='+', default=['KF1D'])    
-    parser.add_argument('--model_base.lr', type=float, default=1e-4)
+    parser.add_argument('--model_base.lr', type=float, default=1e2)
     parser.add_argument('--model_base.state_dim', type=int, default=3)
     parser.add_argument('--model_base.action_dim', type=int, default=4)
 
@@ -180,4 +234,4 @@ if __name__ == '__main__':
     args = parse_args()
     loop(args)
     
-    
+
